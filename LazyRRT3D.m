@@ -41,79 +41,73 @@
 %    \version:   0.1$
 % ==============================================================================
 
-function [nIterations,sizePath,run_time] =  LazyRRT3D(dim,segmentLength,random_world,show_output)
-% dim = 2;
-% segmentLength = 5;
-% random_world = 0;
-if dim ==2
-    start_cord = [5,5];
-    goal_cord = [95,95];
-    
-else
-    
-    start_cord = [5,5,5];
-    goal_cord = [95,95,95];
-end
+function [nIterations, sizePath, run_time] =  LazyRRT3D(dim, segmentLength, ...
+                                                random_world,show_output)
+    % dim = 2;
+    % segmentLength = 5;
+    % random_world = 0;
+    if dim == 2
+        start_cord = [5,5];
+        goal_cord = [95,95];
+    else
+        start_cord = [5,5,5];
+        goal_cord = [95,95,95];
+    end
 
+    % create random world
+    Size = 100;
+    NumObstacles = 100;
 
+    if random_world == 1
+        world = createWorld(NumObstacles,ones(1,dim)*Size,zeros(1,dim),dim);
+    else
+        [world NumObstacles] = createKnownWorld(ones(1,dim)*Size,[0;0;0],dim);
+    end
 
-% create random world
-Size = 100;
-NumObstacles = 100;
+    % randomly select start and end nodes
+    %start_node = generateRandomNode(world,dim)
+    %end_node   = generateRandomNode(world,dim)
+    start_node = [start_cord,0,0,0];
+    end_node = [goal_cord,0,0,0];
+    % establish tree starting with the start node
+    tree = start_node;
 
-if random_world ==1
-    world = createWorld(NumObstacles,ones(1,dim)*Size,zeros(1,dim),dim);
-else
-    [world NumObstacles] = createKnownWorld(ones(1,dim)*Size,[0;0;0],dim);
-end
+    a = clock;
 
-% randomly select start and end nodes
-%start_node = generateRandomNode(world,dim)
-%end_node   = generateRandomNode(world,dim)
-start_node = [start_cord,0,0,0];
-end_node = [goal_cord,0,0,0];
-% establish tree starting with the start node
-tree = start_node;
+    % check to see if start_node connects directly to end_node
+    if ( (norm(start_node(1:dim)-end_node(1:dim))<segmentLength )...
+            &&(collision(start_node,end_node,world,dim)==0) )
+        path = [start_node; end_node];
+    else
+        nIterations = 0;
+        numPaths = 0;
+        flag = 0;
+        while numPaths<1,
+            [tree,flag] = extendLazyTree(tree,end_node,segmentLength,world,dim);
+            numPaths = numPaths + flag;
+            nIterations = nIterations+1;
+        end
+    end
 
-a = clock;
+    % find path with minimum cost to end_node
+    LazyPath = findMinimumPath(tree,end_node,dim);
 
-% check to see if start_node connects directly to end_node
-if ( (norm(start_node(1:dim)-end_node(1:dim))<segmentLength )...
-        &&(collision(start_node,end_node,world,dim)==0) )
-    path = [start_node; end_node];
-else
-    nIterations = 0;
-    numPaths = 0;
-    flag = 0;
-    while numPaths<1,
-        [tree,flag] = extendLazyTree(tree,end_node,segmentLength,world,dim);
-        numPaths = numPaths + flag;
-        nIterations = nIterations+1;
+    path = RepairLazyPath(LazyPath,segmentLength,world,dim);
+    sizePath = size(path,1);
+
+    b = clock;
+    run_time = 3600*(b(4)-a(4)) + 60 * (b(5)-a(5)) + (b(6) - a(6));
+
+    if show_output == 1
+
+        figure;
+        plotExpandedTree(world,tree,dim);
+        plotWorld(world,path,dim);
+        % figure(2);
+        % plotWorld(world,path,dim);
+        %plotExpandedTree(world,tree,dim);
     end
 end
-
-% find path with minimum cost to end_node
-LazyPath = findMinimumPath(tree,end_node,dim);
-
-path = RepairLazyPath(LazyPath,segmentLength,world,dim);
-sizePath = size(path,1);
-
-b = clock;
-run_time = 3600*(b(4)-a(4)) + 60 * (b(5)-a(5)) + (b(6) - a(6));
-
-if show_output == 1
-    
-    figure;
-    plotExpandedTree(world,tree,dim);
-    plotWorld(world,path,dim);
-    % figure(2);
-    % plotWorld(world,path,dim);
-    %plotExpandedTree(world,tree,dim);
-end
-end
-
-
-
 
 function path = RepairLazyPath(LazyPath,segmentLength,world,dim)
 path = [];
@@ -160,266 +154,253 @@ end
 
 end
 
-
-
 function world = createWorld(NumObstacles, endcorner, origincorner,dim)
+    if dim == 2
+        % check to make sure that the region is nonempty
+        if (endcorner(1) <= origincorner(1)) || (endcorner(2) <= origincorner(2))
+            disp('Not valid corner specifications!')
+            world=[];
 
-if dim == 2
-    
-    % check to make sure that the region is nonempty
-    if (endcorner(1) <= origincorner(1)) | (endcorner(2) <= origincorner(2))
-        disp('Not valid corner specifications!')
-        world=[];
-        
-        % create world data structure
-    else
-        world.NumObstacles = NumObstacles;
-        world.endcorner = endcorner;
-        world.origincorner = origincorner;
-        
-        % create NumObstacles
-        maxRadius = min(endcorner(1)- origincorner(1), endcorner(2)-origincorner(2));
-        maxRadius = 5*maxRadius/NumObstacles/2;
-        for i=1:NumObstacles,
-            % randomly pick radius
-            world.radius(i) = maxRadius*rand;
-            % randomly pick center of obstacles
-            cx = origincorner(1) + world.radius(i)...
-                + (endcorner(1)-origincorner(1)-2*world.radius(i))*rand;
-            cy = origincorner(2) + world.radius(i)...
-                + (endcorner(2)-origincorner(2)-2*world.radius(i))*rand;
-            world.cx(i) = cx;
-            world.cy(i) = cy;
+%         create world data structure
+        else
+            world.NumObstacles = NumObstacles;
+            world.endcorner = endcorner;
+            world.origincorner = origincorner;
+
+            % create NumObstacles
+            maxRadius = min(endcorner(1)- origincorner(1), endcorner(2)-origincorner(2));
+            maxRadius = 5*maxRadius/NumObstacles/2;
+            for i=1:NumObstacles
+                % randomly pick radius
+                world.radius(i) = maxRadius*rand;
+                % randomly pick center of obstacles
+                cx = origincorner(1) + world.radius(i)...
+                    + (endcorner(1)-origincorner(1)-2*world.radius(i))*rand;
+                cy = origincorner(2) + world.radius(i)...
+                    + (endcorner(2)-origincorner(2)-2*world.radius(i))*rand;
+                world.cx(i) = cx;
+                world.cy(i) = cy;
+            end
+        end
+
+    elseif dim ==3
+        % check to make sure that the region is nonempty
+        if (endcorner(1) <= origincorner(1)) || (endcorner(2) <= origincorner(2)) || (endcorner(3) <= origincorner(3))
+            disp('Not valid corner specifications!')
+            world=[];
+
+            % create world data structure
+        else
+            world.NumObstacles = NumObstacles;
+            world.endcorner = endcorner;
+            world.origincorner = origincorner;
+
+            % create NumObstacles
+            bounds = [endcorner(1)- origincorner(1), endcorner(2)-origincorner(2), endcorner(3)-origincorner(3)];
+            maxRadius = min(bounds);
+            maxRadius = 5*maxRadius/NumObstacles;
+            for i=1:NumObstacles,
+                % randomly pick radius
+                world.radius(i) = maxRadius*rand;
+                % randomly pick center of obstacles
+                cx = origincorner(1) + world.radius(i)...
+                    + (endcorner(1)-origincorner(1)-2*world.radius(i))*rand;
+                cy = origincorner(2) + world.radius(i)...
+                    + (endcorner(2)-origincorner(2)-2*world.radius(i))*rand;
+                cz = origincorner(2) + world.radius(i)...
+                    + (endcorner(2)-origincorner(2)-2*world.radius(i))*rand;
+                world.cx(i) = cx;
+                world.cy(i) = cy;
+                world.cz(i) = cz;
+            end
         end
     end
-    
-elseif dim ==3;
-    % check to make sure that the region is nonempty
-    if (endcorner(1) <= origincorner(1)) || (endcorner(2) <= origincorner(2)) || (endcorner(3) <= origincorner(3))
-        disp('Not valid corner specifications!')
-        world=[];
-        
-        % create world data structure
-    else
-        world.NumObstacles = NumObstacles;
-        world.endcorner = endcorner;
-        world.origincorner = origincorner;
-        
-        % create NumObstacles
-        bounds = [endcorner(1)- origincorner(1), endcorner(2)-origincorner(2), endcorner(3)-origincorner(3)];
-        maxRadius = min(bounds);
-        maxRadius = 5*maxRadius/NumObstacles;
-        for i=1:NumObstacles,
-            % randomly pick radius
-            world.radius(i) = maxRadius*rand;
-            % randomly pick center of obstacles
-            cx = origincorner(1) + world.radius(i)...
-                + (endcorner(1)-origincorner(1)-2*world.radius(i))*rand;
-            cy = origincorner(2) + world.radius(i)...
-                + (endcorner(2)-origincorner(2)-2*world.radius(i))*rand;
-            cz = origincorner(2) + world.radius(i)...
-                + (endcorner(2)-origincorner(2)-2*world.radius(i))*rand;
-            world.cx(i) = cx;
-            world.cy(i) = cy;
-            world.cz(i) = cz;
+end
+
+function [world, NumObstacles] = createKnownWorld(endcorner, origincorner,dim)
+    NumObstacles = 5;
+    if dim == 2
+        % check to make sure that the region is nonempty
+        if (endcorner(1) <= origincorner(1)) || (endcorner(2) <= origincorner(2))
+            disp('Not valid corner specifications!')
+            world=[];
+%         create world data structure
+        else
+            world.NumObstacles = NumObstacles;
+            world.endcorner = endcorner;
+            world.origincorner = origincorner;
+
+            % create NumObstacles
+            maxRadius = 10;
+
+            world.radius(1) = maxRadius;
+            cx = 50;
+            cy = 50;
+            world.cx(1) = cx;
+            world.cy(1) = cy;
+
+            world.radius(2) = maxRadius;
+            cx = 75;
+            cy = 25;
+            world.cx(2) = cx;
+            world.cy(2) = cy;
+
+            world.radius(3) = maxRadius;
+            cx = 25;
+            cy = 75;
+            world.cx(3) = cx;
+            world.cy(3) = cy;
+
+            world.radius(4) = maxRadius;
+            cx = 25;
+            cy = 25;
+            world.cx(4) = cx;
+            world.cy(4) = cy;
+
+            world.radius(5) = maxRadius;
+            cx = 75;
+            cy = 75;
+            world.cx(5) = cx;
+            world.cy(5) = cy;
+        end
+
+    elseif dim == 3
+
+        NumObstacles = 9;
+        % check to make sure that the region is nonempty
+        if (endcorner(1) <= origincorner(1)) || ...
+                (endcorner(2) <= origincorner(2)) || ...
+                (endcorner(3) <= origincorner(3))
+            disp('Not valid corner specifications!')
+            world = [];
+
+    %     create world data structure
+        else
+            world.NumObstacles = NumObstacles;
+            world.endcorner = endcorner;
+            world.origincorner = origincorner;
+
+            % create NumObstacles
+            maxRadius = 10;
+
+            world.radius(1) = maxRadius;
+            cx = 50;
+            cy = 50;
+            cz = 50;
+            world.cx(1) = cx;
+            world.cy(1) = cy;
+            world.cz(1) = cz;
+
+            world.radius(2) = maxRadius;
+            cx = 25;
+            cy = 25;
+            cz = 25;
+            world.cx(2) = cx;
+            world.cy(2) = cy;
+            world.cz(2) = cz;
+
+            world.radius(3) = maxRadius;
+            cx = 75;
+            cy = 75;
+            cz = 75;
+            world.cx(3) = cx;
+            world.cy(3) = cy;
+            world.cz(3) = cz;
+
+            world.radius(4) = maxRadius;
+            cx = 25;
+            cy = 25;
+            cz = 75;
+            world.cx(4) = cx;
+            world.cy(4) = cy;
+            world.cz(4) = cz;
+
+            world.radius(5) = maxRadius;
+            cx = 75;
+            cy = 75;
+            cz = 25;
+            world.cx(5) = cx;
+            world.cy(5) = cy;
+            world.cz(5) = cz;
+
+            world.radius(6) = maxRadius;
+            cx = 25;
+            cy = 75;
+            cz = 25;
+            world.cx(6) = cx;
+            world.cy(6) = cy;
+            world.cz(6) = cz;
+
+            world.radius(7) = maxRadius;
+            cx = 75;
+            cy = 25;
+            cz = 25;
+            world.cx(7) = cx;
+            world.cy(7) = cy;
+            world.cz(7) = cz;
+
+            world.radius(8) = maxRadius;
+            cx = 75;
+            cy = 25;
+            cz = 75;
+            world.cx(8) = cx;
+            world.cy(8) = cy;
+            world.cz(8) = cz;
+
+
+            world.radius(9) = maxRadius;
+            cx = 25;
+            cy = 75;
+            cz = 75;
+            world.cx(9) = cx;
+            world.cy(9) = cy;
+            world.cz(9) = cz;
         end
     end
 end
-end
 
-function [world NumObstacles] = createKnownWorld(endcorner, origincorner,dim)
-NumObstacles = 5;
-if dim == 2
-    % check to make sure that the region is nonempty
-    if (endcorner(1) <= origincorner(1)) | (endcorner(2) <= origincorner(2)),
-        disp('Not valid corner specifications!')
-        world=[];
-        % create world data structure
-    else
-        world.NumObstacles = NumObstacles;
-        world.endcorner = endcorner;
-        world.origincorner = origincorner;
-        
-        % create NumObstacles
-        maxRadius = 10;
-        
-        world.radius(1) = maxRadius;
-        cx = 50;
-        cy = 50;
-        world.cx(1) = cx;
-        world.cy(1) = cy;
-        
-        world.radius(2) = maxRadius;
-        cx = 75;
-        cy = 25;
-        world.cx(2) = cx;
-        world.cy(2) = cy;
-        
-        world.radius(3) = maxRadius;
-        cx = 25;
-        cy = 75;
-        world.cx(3) = cx;
-        world.cy(3) = cy;
-        
-        world.radius(4) = maxRadius;
-        cx = 25;
-        cy = 25;
-        world.cx(4) = cx;
-        world.cy(4) = cy;
-        
-        world.radius(5) = maxRadius;
-        cx = 75;
-        cy = 75;
-        world.cx(5) = cx;
-        world.cy(5) = cy;
-    end
-    
-elseif dim == 3
-    
-    NumObstacles = 9;
-    % check to make sure that the region is nonempty
-    if (endcorner(1) <= origincorner(1)) | (endcorner(2) <= origincorner(2)) | (endcorner(3) <= origincorner(3)),
-        disp('Not valid corner specifications!')
-        world=[];
-        
-        % create world data structure
-    else
-        world.NumObstacles = NumObstacles;
-        world.endcorner = endcorner;
-        world.origincorner = origincorner;
-        
-        % create NumObstacles
-        maxRadius = 10;
-        
-        world.radius(1) = maxRadius;
-        cx = 50;
-        cy = 50;
-        cz = 50;
-        world.cx(1) = cx;
-        world.cy(1) = cy;
-        world.cz(1) = cz;
-        
-        world.radius(2) = maxRadius;
-        cx = 25;
-        cy = 25;
-        cz = 25;
-        world.cx(2) = cx;
-        world.cy(2) = cy;
-        world.cz(2) = cz;
-        
-        world.radius(3) = maxRadius;
-        cx = 75;
-        cy = 75;
-        cz = 75;
-        world.cx(3) = cx;
-        world.cy(3) = cy;
-        world.cz(3) = cz;
-        
-        world.radius(4) = maxRadius;
-        cx = 25;
-        cy = 25;
-        cz = 75;
-        world.cx(4) = cx;
-        world.cy(4) = cy;
-        world.cz(4) = cz;
-        
-        world.radius(5) = maxRadius;
-        cx = 75;
-        cy = 75;
-        cz = 25;
-        world.cx(5) = cx;
-        world.cy(5) = cy;
-        world.cz(5) = cz;
-        
-        world.radius(6) = maxRadius;
-        cx = 25;
-        cy = 75;
-        cz = 25;
-        world.cx(6) = cx;
-        world.cy(6) = cy;
-        world.cz(6) = cz;
-        
-        world.radius(7) = maxRadius;
-        cx = 75;
-        cy = 25;
-        cz = 25;
-        world.cx(7) = cx;
-        world.cy(7) = cy;
-        world.cz(7) = cz;
-        
-        world.radius(8) = maxRadius;
-        cx = 75;
-        cy = 25;
-        cz = 75;
-        world.cx(8) = cx;
-        world.cy(8) = cy;
-        world.cz(8) = cz;
-        
-        
-        world.radius(9) = maxRadius;
-        cx = 25;
-        cy = 75;
-        cz = 75;
-        world.cx(9) = cx;
-        world.cy(9) = cy;
-        world.cz(9) = cz;
-    end
-end
-end
-
-
-
-
-
-function node=generateRandomNode(world,dim)
-
-if dim ==2;
-    % randomly pick configuration
-    px       = (world.endcorner(1)-world.origincorner(1))*rand;
-    py       = (world.endcorner(2)-world.origincorner(2))*rand;
-    
-    chi      = 0;
-    cost     = 0;
-    node     = [px, py, chi, cost, 0];
-    
-    % check collision with obstacle
-    while collision(node, node, world,dim),
+function node = generateRandomNode(world,dim)
+    if dim ==2;
+        % randomly pick configuration
         px       = (world.endcorner(1)-world.origincorner(1))*rand;
         py       = (world.endcorner(2)-world.origincorner(2))*rand;
-        
+
         chi      = 0;
         cost     = 0;
         node     = [px, py, chi, cost, 0];
-    end
-    
-elseif dim ==3;
-    % randomly pick configuration
-    px       = (world.endcorner(1)-world.origincorner(1))*rand;
-    py       = (world.endcorner(2)-world.origincorner(2))*rand;
-    pz       = (world.endcorner(3)-world.origincorner(3))*rand;
-    
-    chi      = 0;
-    cost     = 0;
-    node     = [px, py, pz, chi, cost, 0];
-    
-    % check collision with obstacle
-    while collision(node, node, world,dim),
+
+        % check collision with obstacle
+        while collision(node, node, world,dim),
+            px       = (world.endcorner(1)-world.origincorner(1))*rand;
+            py       = (world.endcorner(2)-world.origincorner(2))*rand;
+
+            chi      = 0;
+            cost     = 0;
+            node     = [px, py, chi, cost, 0];
+        end
+
+    elseif dim ==3;
+        % randomly pick configuration
         px       = (world.endcorner(1)-world.origincorner(1))*rand;
         py       = (world.endcorner(2)-world.origincorner(2))*rand;
         pz       = (world.endcorner(3)-world.origincorner(3))*rand;
-        
+
         chi      = 0;
         cost     = 0;
         node     = [px, py, pz, chi, cost, 0];
+
+        % check collision with obstacle
+        while collision(node, node, world,dim),
+            px       = (world.endcorner(1)-world.origincorner(1))*rand;
+            py       = (world.endcorner(2)-world.origincorner(2))*rand;
+            pz       = (world.endcorner(3)-world.origincorner(3))*rand;
+
+            chi      = 0;
+            cost     = 0;
+            node     = [px, py, pz, chi, cost, 0];
+        end
     end
-    
 end
-
-end
-
-
-
-
 
 function collision_flag = collision(node, parent, world,dim)
 
@@ -458,12 +439,6 @@ elseif collision_flag == 0 && dim ==3
 end
 end
 
-
-
-
-
-
-
 function flag = canEndConnectToTree(tree,end_node,minDist,world,dim)
 flag = 0;
 % check only last node added to tree since others have been checked
@@ -473,13 +448,6 @@ if ( (norm(tree(end,1:dim)-end_node(1:dim))<minDist)...
 end
 
 end
-
-
-
-
-
-
-
 
 function [new_tree,flag] = extendTree(tree,end_node,segmentLength,world,dim)
 flag = 0;
@@ -519,10 +487,6 @@ if ( (norm(new_node(1:dim)-end_node(1:dim))<segmentLength )...
 end
 end
 
-
-
-
-
 function [new_tree,flag] = extendLazyTree(tree,end_node,segmentLength,world,dim)
 
 % select a random point
@@ -555,15 +519,6 @@ end
 
 end
 
-
-
-
-
-
-
-
-
-
 function e_dist = sqr_eucl_dist(array,dim)
 
 sqr_e_dist = zeros(size(array,1),dim);
@@ -581,8 +536,6 @@ end
 
 end
 
-
-
 %calculate the cost from a node to a point
 function [cost] = cost_np(from_node,to_point,dim)
 
@@ -591,7 +544,6 @@ eucl_dist = norm(diff);
 cost = from_node(:,dim+2) + eucl_dist;
 
 end
-
 
 %calculate the cost from a node to a node
 function [cost] = cost_nn(from_node,to_node,dim)
@@ -606,7 +558,6 @@ function [cost] = line_cost(from_node,to_point,dim)
 diff = from_node(:,1:dim) - to_point;
 cost = norm(diff);
 end
-
 
 function path = findMinimumPath(tree,end_node,dim)
 
@@ -630,8 +581,6 @@ while parent_node>1,
 end
 
 end
-
-
 
 function plotExpandedTree(world,tree,dim)
 ind = size(tree,1);
@@ -666,9 +615,6 @@ while ind>0
     end
 end
 end
-
-
-
 
 function plotWorld(world,path,dim)
 % the first element is the north coordinate
