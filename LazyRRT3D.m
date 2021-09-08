@@ -40,7 +40,7 @@
 %    \author:    Adnan Munawar
 %    \version:   0.1$
 % ==============================================================================
-
+% teste
 function [nIterations, sizePath, run_time] =  LazyRRT3D(dim, segmentLength, ...
                                                 random_world,show_output)
     % dim = 2;
